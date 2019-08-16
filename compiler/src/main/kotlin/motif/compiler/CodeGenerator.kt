@@ -19,6 +19,7 @@ import com.squareup.javapoet.ClassName
 import com.squareup.javapoet.TypeSpec
 import motif.core.ResolvedGraph
 import motif.models.Scope
+import java.lang.IllegalStateException
 import javax.annotation.processing.ProcessingEnvironment
 
 interface GeneratedClass {
@@ -33,6 +34,10 @@ class CodeGenerator(
 
     private val dependencies = mutableMapOf<Scope, Dependencies>()
     private val implTypeNames = mutableMapOf<Scope, ClassName>()
+
+    private fun getGeneratedClasses(): List<GeneratedClass> {
+        return getScopeImpls() + getScopeFactoryHelpers()
+    }
 
     private fun getScopeImpls(): List<ScopeImpl> {
         return graph.scopes
@@ -57,6 +62,17 @@ class CodeGenerator(
                 }
     }
 
+    private fun getScopeFactoryHelpers(): List<ScopeFactoryHelper> {
+        return graph.scopeFactories
+                .map { scopeFactory ->
+                    val scope = graph.getScope(scopeFactory.scopeClass)
+                            ?: throw IllegalStateException("Could not find Scope for class: ${scopeFactory.scopeClass}")
+                    val scopeImplTypeName = getImplTypeName(scope)
+                    val dependencies = getDependencies(scope)
+                    ScopeFactoryHelperFactory(scopeFactory, scopeImplTypeName, dependencies).create()
+                }
+    }
+
     private fun getDependencies(scope: Scope): Dependencies {
         return dependencies.computeIfAbsent(scope) {
             val implTypeName = getImplTypeName(scope)
@@ -75,7 +91,7 @@ class CodeGenerator(
     companion object {
 
         fun generate(env: ProcessingEnvironment, graph: ResolvedGraph): List<GeneratedClass> {
-            return CodeGenerator(env, graph).getScopeImpls()
+            return CodeGenerator(env, graph).getGeneratedClasses()
         }
     }
 }
